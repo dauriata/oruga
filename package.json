@@ -5,6 +5,7 @@
   "description": "UI components for Vue.js and CSS framework agnostic",
   "author": "Walter Tommasi <tommsi20@gmail.com>",
   "license": "MIT",
+  "main": "packages/oruga/dist/esm/index.mjs",
   "workspaces": [
     "packages/oruga",
     "packages/docs"
