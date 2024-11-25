@@ -1,10 +1,10 @@
 import {
     getCurrentInstance,
     inject,
+    onMounted,
     onUnmounted,
     provide,
     ref,
-    watch,
     type Component,
     type ComputedRef,
     type MaybeRefOrGetter,
@@ -12,7 +12,6 @@ import {
     type UnwrapNestedRefs,
 } from "vue";
 import { unrefElement } from "./unrefElement";
-import { useDebounce } from "./useDebounce";
 
 export type ProviderItem<T = unknown> = {
     index: number;
@@ -23,6 +22,7 @@ export type ProviderItem<T = unknown> = {
 type PovidedData<P, I = unknown> = {
     registerItem: (data?: ComputedRef<I>) => ProviderItem<I>;
     unregisterItem: (item: ProviderItem<I>) => void;
+    sortItems: () => void;
     data?: ComputedRef<P>;
 };
 
@@ -67,39 +67,6 @@ export function useProviderParent<ItemData = unknown, ParentData = unknown>(
     const childItems = ref<ProviderItem<ItemData>[]>([]);
     const sequence = ref(1);
 
-    if (options?.sorted) {
-        // debounced sort function
-        const sortHandler = useDebounce((items: typeof childItems.value) => {
-            const parent = unrefElement(rootRef);
-            if (!parent) return;
-
-            // create a list of child item ids
-            const ids = items
-                .map((item) => `[data-id="${key}-${item.identifier}"]`)
-                .join(",");
-
-            // query all child items
-            const children = parent.querySelectorAll(ids);
-
-            // create a list of ids ordered after the elements in template
-            const sortedIds = Array.from(children).map((el) =>
-                el.getAttribute("data-id")?.replace(`${key}-`, ""),
-            );
-
-            // update the index attribute of the child items
-            items.forEach(
-                (item) =>
-                    (item.index = sortedIds.indexOf(`${item.identifier}`)),
-            );
-
-            // sort items according to their index position
-            items.sort((a, b) => a.index - b.index);
-        }, 500);
-
-        // watch change of the child list (no deep change - only list update)
-        watch(childItems, sortHandler);
-    }
-
     function registerItem(
         data?: ComputedRef<ItemData>,
     ): ProviderItem<ItemData> {
@@ -122,10 +89,39 @@ export function useProviderParent<ItemData = unknown, ParentData = unknown>(
         return String(sequence.value++);
     }
 
+    function sortItems(): void {
+        if (!options?.sorted) return;
+        const items = childItems.value;
+        const parent = unrefElement(rootRef);
+        if (!parent) return;
+
+        // create a list of child item ids
+        const ids = items
+            .map((item) => `[data-id="${key}-${item.identifier}"]`)
+            .join(",");
+
+        // query all child items
+        const children = parent.querySelectorAll(ids);
+
+        // create a list of ids ordered after the elements in template
+        const sortedIds = Array.from(children).map((el) =>
+            el.getAttribute("data-id")?.replace(`${key}-`, ""),
+        );
+
+        // update the index attribute of the child items
+        items.forEach(
+            (item) => (item.index = sortedIds.indexOf(`${item.identifier}`)),
+        );
+
+        // sort items according to their index position
+        items.sort((a, b) => a.index - b.index);
+    }
+
     /** Provide functionality for child components via dependency injection. */
     provide<PovidedData<ParentData, ItemData>>("$o-" + key, {
         registerItem,
         unregisterItem,
+        sortItems,
         data: options?.data,
     });
 
@@ -228,6 +224,10 @@ export function useProviderChild<ParentData, ItemData = unknown>(
 
     if (parent && options.register)
         item.value = parent.registerItem(options?.data);
+
+    onMounted(() => {
+        if (parent && item.value) parent.sortItems();
+    });
 
     onUnmounted(() => {
         if (parent && item.value) parent.unregisterItem(item.value);
